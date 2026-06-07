@@ -238,6 +238,25 @@ h1 em{font-style:normal;color:var(--teal)}
 .dm-breathe{color:var(--teal,#06b6d4);font-size:0.82em;font-weight:700;background:rgba(6,182,212,.12);border-radius:3px;padding:0 4px;margin:0 2px;}
 .dm-slow{color:#a78bfa;font-size:0.82em;font-weight:700;background:rgba(167,139,250,.12);border-radius:3px;padding:0 4px;margin:0 2px;}
 .dm-stress{color:var(--accent,#6366f1);font-size:0.82em;font-weight:700;background:rgba(99,102,241,.12);border-radius:3px;padding:0 4px;margin:0 2px;}
+
+/* Mobile responsive fixes — MOB-1, MOB-2 */
+@media (max-width: 600px) {
+  .root-wrap, #root > div { padding: 10px !important; }
+  .voice-wrap { flex-direction: column !important; }
+  .btn, .ap-btn, .btn-outline {
+    width: 100% !important;
+    text-align: center !important;
+    margin-top: 6px !important;
+    min-height: 44px !important;
+  }
+  textarea { font-size: 16px !important; } /* prevents iOS zoom */
+  .fb2col { flex-direction: column !important; }
+  .compare-panel { min-width: 0 !important; width: 100% !important; }
+  div[style*="display:flex"] { flex-wrap: wrap !important; }
+  div[style*="display: flex"] { flex-wrap: wrap !important; }
+  .scenario-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .cmp-listen { min-height: 36px !important; }
+}
 </style>
 </head>
 <body>
@@ -405,14 +424,33 @@ function fileAB(f){return new Promise((res,rej)=>{const r=new FileReader();r.onl
 let mammothReady=false;
 function loadMammoth(){return new Promise(res=>{if(mammothReady||window.mammoth){mammothReady=true;res();return;}const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js";s.onload=()=>{mammothReady=true;res();};s.onerror=()=>res();document.head.appendChild(s);});}
 async function extractWord(file){try{await loadMammoth();if(!window.mammoth)throw new Error();const ab=await fileAB(file);const r=await mammoth.extractRawText({arrayBuffer:ab});return r.value||"";}catch(e){try{return await fileText(file);}catch(e2){return "";}}}
-async function extractPDF(file){try{const b64=await fileB64(file);const r=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:"Extract all text. Return plain text only.",messages:[{role:"user",content:[{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}},{type:"text",text:"Extract all text."}]}],max_tokens:2000})});const d=await r.json();return d.content?.map(b=>b.text||"").join("")||"";}catch(e){return "";}}
+async function extractPDF(file){
+  try{
+    const b64=await fileB64(file);
+    const isLocal=window.location.protocol==='file:'||window.location.href.includes('claude.ai')||window.location.hostname==='';
+    const url=isLocal?'https://api.anthropic.com/v1/messages':'/api/claude';
+    const body=isLocal
+      ?JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2000,system:"Extract all text. Return plain text only.",messages:[{role:"user",content:[{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}},{type:"text",text:"Extract all text."}]}]})
+      :JSON.stringify({system:"Extract all text. Return plain text only.",messages:[{role:"user",content:[{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}},{type:"text",text:"Extract all text."}]}],max_tokens:2000});
+    const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body});
+    const d=await r.json();
+    return d.content?.map(b=>b.text||"").join("")||"";
+  }catch(e){return "";}
+}
 async function readDoc(file){if(!file)return "";const n=file.name.toLowerCase();if(n.endsWith(".pdf")||file.type==="application/pdf")return extractPDF(file);if(n.endsWith(".doc")||n.endsWith(".docx")||file.type.includes("word")||file.type.includes("msword"))return extractWord(file);try{return await fileText(file);}catch(e){return "";}}
 
 // ── CLAUDE API ──
 async function claude(messages,system,max_tokens=1500){
-  const r=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system,messages,max_tokens})});
+  // Direct Anthropic API — works in artifact preview and live site
+  const isLocal=window.location.protocol==='file:'||window.location.href.includes('claude.ai')||window.location.hostname==='';
+  const url=isLocal?'https://api.anthropic.com/v1/messages':'/api/claude';
+  const headers={'Content-Type':'application/json'};
+  const body=isLocal
+    ?JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens,system,messages})
+    :JSON.stringify({system,messages,max_tokens});
+  const r=await fetch(url,{method:'POST',headers,body});
   if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error?.message||`HTTP ${r.status}`);}
-  const d=await r.json();return d.content?.map(b=>b.text||"").join("")||"";
+  const d=await r.json();return d.content?.map(b=>b.text||'').join('')||'';
 }
 
 // ── GENERATE QUESTIONS ──
@@ -741,16 +779,21 @@ function playRecording(key){
   const audio=new Audio(url);
   _activeAudio=audio;
   set({playingRecording:key});
-  audio.play().catch(e=>{console.error('Playback failed:',e);_activeAudio=null;URL.revokeObjectURL(url);set({playingRecording:null,error:'Playback failed — try again'});});
-  audio.onended=()=>{URL.revokeObjectURL(url);_activeAudio=null;set({playingRecording:null});};
+  audio.play().catch(e=>{console.error('Playback failed:',e);_activeAudio=null;URL.revokeObjectURL(url);set({playingRecording:null,error:'Playback failed — try again'});setTimeout(render,30);});
+  audio.onended=()=>{URL.revokeObjectURL(url);_activeAudio=null;set({playingRecording:null});setTimeout(render,30);};
 }
 function stopRecording(){
-  if(_activeAudio){_activeAudio.pause();_activeAudio=null;set({playingRecording:null});}
+  if(_activeAudio){_activeAudio.pause();_activeAudio=null;set({playingRecording:null});setTimeout(render,30);}
 }
 function toggleReplay(qIdx,ai){
   const key=`${qIdx}_${ai}`;
-  if(S.playingRecording===key){stopRecording();}else{playYours(qIdx,ai);}
-  setTimeout(render,50);
+  if(S.playingRecording===key){
+    stopRecording();
+    setTimeout(render,30);
+  }else{
+    playYours(qIdx,ai);
+    setTimeout(render,30);
+  }
 }
 
 // Enhancement 2: analyse voice metrics from transcript + audio data
@@ -849,10 +892,10 @@ function onFile(type,file){
 }
 function submitText(){const ta=document.getElementById("ans-input");evalAnswer(S.currentQ,ta?ta.value:"");}
 function submitVoice(){
-  if(S.recording)stopVoice();
-  // set blob key so MediaRecorder knows where to store this recording
+  // set blob key BEFORE stopping — onstop fires async so key must exist first
   const attemptIdx=(S.attempts[S.currentQ]||[]).length;
   currentBlobKey=`${S.currentQ}_${attemptIdx}`;
+  if(S.recording)stopVoice();
   evalAnswer(S.currentQ,S.transcript);
 }
 document.addEventListener("input",e=>{if(e.target.id==="ans-input"){const cc=document.getElementById("cc");if(cc)cc.textContent=e.target.value.length+" chars";}});
