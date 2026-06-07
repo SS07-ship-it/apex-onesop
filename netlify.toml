@@ -1,0 +1,10 @@
+[build]
+  functions = "netlify/functions"
+
+[functions."claude-proxy"]
+  timeout = 26
+
+[[redirects]]
+  from = "/api/claude"
+  to = "/.netlify/functions/claude-proxy"
+  status = 200
