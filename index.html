@@ -704,7 +704,11 @@ function playYours(qIdx,ai){
 function playIdeal(qIdx,ai){
   const fb=(S.attempts[qIdx]||[])[ai]?.feedback;if(!fb?.model_answer)return;
   set({playingSection:`ideal_${qIdx}_${ai}`});
-  speak("Coached version of your answer: "+fb.model_answer,()=>set({playingSection:`ideal_${qIdx}_${ai}`}),()=>set({playingSection:null}));
+  setTimeout(render,30);
+  speak("Coached version of your answer: "+fb.model_answer,
+    ()=>{set({playingSection:`ideal_${qIdx}_${ai}`});setTimeout(render,30);},
+    ()=>{set({playingSection:null});setTimeout(render,30);}
+  );
 }
 
 // ── VOICE RECORDING (Speech recognition + MediaRecorder for playback) ──
@@ -1509,7 +1513,7 @@ function renderInterview(){
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <div style="font-size:12px;font-weight:500">📝 ${S.vcScript.title||"Model answer"}</div>
       <div style="display:flex;gap:6px">
-        <button class="ap-btn ap-btn-play" onclick="playScript()" style="font-size:11px;padding:4px 10px">🔊 Hear it</button>
+        <button class="ap-btn ap-btn-play" onclick="${S.vcScriptPlaying?'stopSpeech();set({vcScriptPlaying:false})':'playScript()'}" style="font-size:11px;padding:4px 10px">${S.vcScriptPlaying?'⏹ Stop':'🔊 Hear it'}</button>
         <button class="btn-outline" style="font-size:11px;padding:4px 8px" onclick="set({vcScript:null,vcScriptLoading:false})">✕</button>
       </div>
     </div>
