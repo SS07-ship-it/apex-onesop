@@ -243,19 +243,39 @@ h1 em{font-style:normal;color:var(--teal)}
 @media (max-width: 600px) {
   .root-wrap, #root > div { padding: 10px !important; box-sizing: border-box !important; }
   body { overflow-x: hidden !important; }
-  .voice-wrap { flex-direction: column !important; align-items: center !important; }
-  /* Action buttons: compact single row, never clipped */
-  .btn, .ap-btn, .btn-outline {
+  .voice-wrap { flex-direction: column !important; align-items: center !important; width: 100% !important; }
+  /* The mic+actions row: keep horizontal, wrap if needed, full width */
+  .voice-action-row {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+    margin-bottom: 8px !important;
+  }
+  /* Mic stays a fixed circle, never stretched */
+  .voice-action-row .voice-btn, .voice-btn, .voice-action-row .vc-mic, .vc-mic {
+    flex: 0 0 auto !important;
+    width: 52px !important;
+    height: 52px !important;
+    max-width: 52px !important;
+  }
+  /* Action buttons sit beside the mic, share remaining width */
+  .voice-action-row .btn, .voice-action-row .btn-outline {
     flex: 1 1 auto !important;
-    min-width: 0 !important;
-    max-width: 48% !important;
-    text-align: center !important;
+    min-width: 90px !important;
+    max-width: 46% !important;
+    min-height: 44px !important;
+    font-size: 14px !important;
+    padding: 10px 12px !important;
+    white-space: nowrap !important;
+  }
+  /* Other standalone buttons full width */
+  .ap-btn {
     min-height: 44px !important;
     font-size: 13px !important;
-    padding: 8px 10px !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
   }
   textarea { font-size: 16px !important; }
   .fb2col { flex-direction: column !important; }
@@ -1603,7 +1623,7 @@ function renderInterview(){
     <button class="btn" onclick="submitText()">Submit →</button>
   </div>`:`
   <div class="voice-wrap">
-    <div style="display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+    <div class="voice-action-row" style="display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;margin-bottom:6px">
       <button class="voice-btn ${S.recording?"rec":"idle"}" onclick="toggleVoice()">${S.recording?"🔴":"🎙️"}</button>
       ${S.transcript.trim()&&thHasPreviewBlob()&&!S.recording?'<button class="btn-outline" onclick="thPreviewRecording()">'+(S.playingRecording==='preview'?'⏹ Stop':'🔊 Replay')+'</button>':''}
       ${S.transcript.trim()&&!S.recording?`<button class="btn" onclick="submitVoice()">🔬 Analyse</button>`:""}
@@ -1953,7 +1973,7 @@ ${(S.vcPreset||S.vcTopic.trim())&&!S.vcMetrics?`
   <div style="font-size:13px;color:var(--text2);text-align:center">
     ${S.vcPreset||S.vcTopic?`<strong style="color:var(--text)">${S.vcTopic||(VC_PRESETS.find(p=>p.id===S.vcPreset)?.prompt||'')}</strong>`:'Select a scenario above to begin'}
   </div>
-  <div style="display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap">
+  <div class="voice-action-row" style="display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap">
     <button class="vc-mic ${S.vcRecording?'rec':'idle'}" onclick="toggleVoiceCoach()">${S.vcRecording?'⏹':'🎙️'}</button>
     ${S.vcTranscript&&!S.vcRecording&&vcAudioBlob?`<button class="btn-outline" onclick="playVcRecording()">${S.playingRecording==="vc"?"⏹ Stop":"🔊 Replay"}</button>`:''}
     ${S.vcTranscript&&!S.vcRecording?`<button class="btn" onclick="analyseVoiceCoach()" ${S.vcLoading?'disabled':''}>${S.vcLoading?'<span class="spin" style="width:14px;height:14px;border-width:1.5px;display:inline-block;vertical-align:middle;margin-right:6px"></span>Analysing…':'🔬 Analyse'}</button>`:''}
