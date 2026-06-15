@@ -1,10 +1,8 @@
 [build]
+  publish = "."
   functions = "netlify/functions"
 
-[functions."claude-proxy"]
-  timeout = 26
-
 [[redirects]]
-  from = "/api/claude"
-  to = "/.netlify/functions/claude-proxy"
+  from = "/api/apex"
+  to = "/.netlify/functions/apex-proxy"
   status = 200

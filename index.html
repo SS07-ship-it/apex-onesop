@@ -239,21 +239,29 @@ h1 em{font-style:normal;color:var(--teal)}
 .dm-slow{color:#a78bfa;font-size:0.82em;font-weight:700;background:rgba(167,139,250,.12);border-radius:3px;padding:0 4px;margin:0 2px;}
 .dm-stress{color:var(--accent,#6366f1);font-size:0.82em;font-weight:700;background:rgba(99,102,241,.12);border-radius:3px;padding:0 4px;margin:0 2px;}
 
-/* Mobile responsive fixes — MOB-1, MOB-2 */
+/* Mobile responsive fixes — MOB-3 single-row actions */
 @media (max-width: 600px) {
-  .root-wrap, #root > div { padding: 10px !important; }
-  .voice-wrap { flex-direction: column !important; }
+  .root-wrap, #root > div { padding: 10px !important; box-sizing: border-box !important; }
+  body { overflow-x: hidden !important; }
+  .voice-wrap { flex-direction: column !important; align-items: center !important; }
+  /* Action buttons: compact single row, never clipped */
   .btn, .ap-btn, .btn-outline {
-    width: 100% !important;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    max-width: 48% !important;
     text-align: center !important;
-    margin-top: 6px !important;
     min-height: 44px !important;
+    font-size: 13px !important;
+    padding: 8px 10px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
   }
-  textarea { font-size: 16px !important; } /* prevents iOS zoom */
+  textarea { font-size: 16px !important; }
   .fb2col { flex-direction: column !important; }
   .compare-panel { min-width: 0 !important; width: 100% !important; }
-  div[style*="display:flex"] { flex-wrap: wrap !important; }
-  div[style*="display: flex"] { flex-wrap: wrap !important; }
+  div[style*="display:flex"] { flex-wrap: wrap !important; max-width: 100% !important; }
+  div[style*="display: flex"] { flex-wrap: wrap !important; max-width: 100% !important; }
   .scenario-grid { grid-template-columns: repeat(2, 1fr) !important; }
   .cmp-listen { min-height: 36px !important; }
 }
@@ -302,7 +310,7 @@ function startWave(){
 function stopWave(){clearInterval(waveInterval);document.querySelectorAll(".ap-bar").forEach(b=>{b.classList.remove("active");b.style.height="4px";});}
 function waveHTML(){return Array.from({length:18},(_,i)=>`<div class="ap-bar" style="height:${4+(i%3)*3}px"></div>`).join("");}
 function playWordAudio(word,slow){speechSynthesis.cancel();const utt=new SpeechSynthesisUtterance(word);utt.rate=slow?0.6:0.9;const v=getVoice();if(v)utt.voice=v;speechSynthesis.speak(utt);}
-function stopAll(){stopSpeech();set({playingSection:null});}
+function stopAll(){stopSpeech();set({playingSection:null});setTimeout(render,30);}
 
 // ── LEVENSHTEIN ──
 function lev(a,b){const m=a.length,n=b.length,dp=Array.from({length:m+1},(_,i)=>Array.from({length:n+1},(_,j)=>i===0?j:j===0?i:0));for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);return dp[m][n];}
@@ -357,7 +365,7 @@ const FILE_KEY = "apex_coach_files";
 function _autoSavePrefs(){
   try{
     sessionStorage.setItem(PREF_KEY,JSON.stringify({
-      role:S.role,company:S.company,qtype:S.qtype,
+      role:S.role,level:S.level,company:S.company,qtype:S.qtype,
       qcount:S.qcount,useCustomQ:S.useCustomQ,customQText:S.customQText
     }));
   }catch(e){}
@@ -378,7 +386,7 @@ let S={
   screen:"home",
   docs:{resume:null,jd:null,extra:null,customQ:null},
   resumeText:"",jdText:"",extraText:"",thScreen:"setup",thDuration:0,playingRecording:null,
-  role:_savedPrefs.role||"",company:_savedPrefs.company||"",
+  role:_savedPrefs.role||"",level:_savedPrefs.level||"",freestyle:false,inferredContext:null,company:_savedPrefs.company||"",
   qtype:_savedPrefs.qtype||"mix",qcount:_savedPrefs.qcount||5,
   useCustomQ:_savedPrefs.useCustomQ||false,customQText:_savedPrefs.customQText||"",
   questions:[],
@@ -427,33 +435,74 @@ async function extractWord(file){try{await loadMammoth();if(!window.mammoth)thro
 async function extractPDF(file){
   try{
     const b64=await fileB64(file);
-    const isLocal=window.location.protocol==='file:'||window.location.href.includes('claude.ai')||window.location.hostname==='';
-    const url=isLocal?'https://api.anthropic.com/v1/messages':'/api/claude';
-    const body=isLocal
-      ?JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2000,system:"Extract all text. Return plain text only.",messages:[{role:"user",content:[{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}},{type:"text",text:"Extract all text."}]}]})
-      :JSON.stringify({system:"Extract all text. Return plain text only.",messages:[{role:"user",content:[{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}},{type:"text",text:"Extract all text."}]}],max_tokens:2000});
-    const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body});
+    const body=JSON.stringify({system:"Extract all text. Return plain text only.",messages:[{role:"user",content:[{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}},{type:"text",text:"Extract all text."}]}],max_tokens:2000});
+    const r=await fetch('/api/apex',{method:"POST",headers:{"Content-Type":"application/json"},body});
     const d=await r.json();
     return d.content?.map(b=>b.text||"").join("")||"";
   }catch(e){return "";}
 }
 async function readDoc(file){if(!file)return "";const n=file.name.toLowerCase();if(n.endsWith(".pdf")||file.type==="application/pdf")return extractPDF(file);if(n.endsWith(".doc")||n.endsWith(".docx")||file.type.includes("word")||file.type.includes("msword"))return extractWord(file);try{return await fileText(file);}catch(e){return "";}}
 
-// ── CLAUDE API ──
-async function claude(messages,system,max_tokens=1500){
-  // Direct Anthropic API — works in artifact preview and live site
-  const isLocal=window.location.protocol==='file:'||window.location.href.includes('claude.ai')||window.location.hostname==='';
-  const url=isLocal?'https://api.anthropic.com/v1/messages':'/api/claude';
-  const headers={'Content-Type':'application/json'};
-  const body=isLocal
-    ?JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens,system,messages})
-    :JSON.stringify({system,messages,max_tokens});
-  const r=await fetch(url,{method:'POST',headers,body});
+// ── APEX ENGINE ──
+async function apexEngine(messages,system,max_tokens=1500){
+  // Engine connection
+  const r=await fetch('/api/apex',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system,messages,max_tokens})});
   if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error?.message||`HTTP ${r.status}`);}
   const d=await r.json();return d.content?.map(b=>b.text||'').join('')||'';
 }
 
 // ── GENERATE QUESTIONS ──
+// ── TH-9: FREESTYLE / CONTEXT INFERENCE MODE ──
+function startFreestyle(){
+  // Minimal VC-style entry — opener seeds inference silently, simple prompt shown
+  const opener={
+    id:1,type:"opening",topic:"Warm-up",
+    question:"Talk about anything you'd like to practise.",
+    interviewer_note:"",
+    freestyleOpener:true
+  };
+  set({
+    freestyle:true,
+    inferredContext:null,
+    qtype:S.qtype||"mix",
+    questions:[opener],
+    loading:false,screen:"interview",currentQ:0,
+    attempts:{},viewingAttempt:{},retryMode:{},
+    amode:"voice",transcript:"",recording:false,results:null,error:null
+  });
+  document.getElementById('stepbar').style.display='flex';
+  setstep(2);
+}
+
+async function inferContextAndNext(answerText){
+  // Called after a freestyle answer — infer context, then generate next question
+  try{
+    const prevContext=S.inferredContext?`Previously detected: ${S.inferredContext.domain} / ${S.inferredContext.seniority}.`:"";
+    const sysInf=`You analyse a spoken answer to infer the speaker's professional context for interview practice.
+${prevContext}
+From what they said, infer their domain/field, seniority level, and a relevant topic focus.
+Then write ONE natural follow-up interview question that digs deeper, tailored to that context and a ${S.level||"professional"} level.
+Return ONLY minified JSON, no line breaks in strings, no apostrophes:
+{"domain":"short domain e.g. IT Infrastructure","seniority":"e.g. Senior","topic":"focus area","next_question":"the follow-up question text","note":"one-line interviewer note"}`;
+    const raw=await apexEngine([{role:"user",content:`Their answer: ${answerText.slice(0,600)}`}],sysInf,500);
+    const inf=JSON.parse(cleanJSON(raw));
+    const newCtx={domain:inf.domain||"General",seniority:inf.seniority||S.level||"Mid",topic:inf.topic||""};
+    const nextQ={id:S.questions.length+1,type:"inferred",topic:newCtx.topic||"Follow-up",question:inf.next_question||"Tell me more about how you approached that.",interviewer_note:inf.note||"Build on your previous answer."};
+    set({inferredContext:newCtx,questions:[...S.questions,nextQ]});
+  }catch(e){
+    // Fallback question if inference fails
+    const nextQ={id:S.questions.length+1,type:"inferred",topic:"Follow-up",question:"Walk me through a specific challenge you faced in that work and how you handled it.",interviewer_note:"Be specific about your actions and the outcome."};
+    set({questions:[...S.questions,nextQ]});
+  }
+}
+
+function editInferredContext(){
+  const cur=S.inferredContext||{domain:"",seniority:S.level||"",topic:""};
+  const d=prompt("Domain / field:",cur.domain)||cur.domain;
+  const s=prompt("Seniority level:",cur.seniority)||cur.seniority;
+  set({inferredContext:{...cur,domain:d,seniority:s}});
+}
+
 async function generateQuestions(){
   if(!S.docs.resume&&!S.useCustomQ){set({error:"Please upload at least one document to continue."});return;}
   if(!S.role.trim()){set({error:"Please enter the role."});return;}
@@ -498,14 +547,15 @@ async function generateQuestions(){
 
     set({lmsg:"Preparing your questions…",lsub:"Tailoring to your background and role"});
 
-    const qtMap={presentation:'presentation',pitch:'pitch',certification:'certification'};const effType=qtMap[S.qtype]||S.qtype||'mix';
+    const qtMap={presentation:'presentation',pitch:'pitch',certification:'certification',storytelling:'storytelling'};const effType=qtMap[S.qtype]||S.qtype||'mix';
     const typeInst={
       mix:"Half technical (role domain knowledge, NOT generic IT) and half behavioral (situational, probe real experience).",
       technical:"Technical/domain knowledge only for this specific role.",
       behavioral:"Behavioral/situational only — probe real experience from the candidate background.",
       certification:"Multiple choice knowledge-check questions only. Each question must present 4 options (A, B, C, D) with one correct answer clearly testing conceptual understanding and recall of the subject matter.",
       presentation:"Questions about structuring and delivering a compelling presentation: opening hooks, argument flow, handling audience questions, and landing key messages memorably.",
-      pitch:"Questions about elevator pitch delivery: distilling a value proposition to 60-90 seconds, handling objections, and adapting to different audiences."
+      pitch:"Questions about elevator pitch delivery: distilling a value proposition to 60-90 seconds, handling objections, and adapting to different audiences.",
+      storytelling:"Questions about narrative structure: setting the scene, building tension, making it relatable, and landing an emotional or memorable point. Coach them to tell compelling stories from their experience."
     }[effType]||"Half technical and half behavioral.";
 
     const sysQ=`You are a senior interviewer for a ${S.role} role. Generate exactly ${S.qcount} interview questions.
@@ -515,7 +565,7 @@ ${typeInst}
 Return ONLY minified valid JSON with NO line breaks inside strings, NO apostrophes in values, NO special chars:
 {"questions":[{"id":1,"type":"technical","topic":"topic","question":"question text","interviewer_note":"note","resume_hook":"hook"}]}`;
 
-    const rawQ=await claude([{role:"user",content:`JD: ${jdForQ}\nCandidate: ${resumeForQ}\nRole: ${S.role}\nCompany: ${S.company||"the company"}`}],sysQ,1500);
+    const rawQ=await apexEngine([{role:"user",content:`JD: ${jdForQ}\nCandidate: ${resumeForQ}\nRole: ${S.role}\nCompany: ${S.company||"the company"}`}],sysQ,1500);
 
     // cleanJSON is defined globally
     const parsed=JSON.parse(cleanJSON(rawQ));
@@ -535,7 +585,7 @@ async function evalAnswer(qIdx,answerText){
 
   const ans=answerText.slice(0,800).replace(/`/g,"'").replace(/"/g,"'");
   const resumeSnip=(S.resumeText||"").slice(0,200);
-  const context=`Role: ${S.role}\nQ: ${q.question}\nAnswer: ${ans}`;
+  const context=`Role: ${S.role}${S.level?` (${S.level})`:""}\nQ: ${q.question}\nAnswer: ${ans}`;
 
   set({loading:true,error:null,lmsg:"Scoring your answer…",lsub:"Checking content and delivery"});
 
@@ -554,7 +604,7 @@ Return ONLY valid JSON:
 No other text.`;
 
   try{
-    const raw1=await claude([{role:"user",content:context}],sys1,30);
+    const raw1=await apexEngine([{role:"user",content:context}],sys1,30);
     const s1=JSON.parse(cleanJSON(raw1));
     if(!s1||!s1.content)throw new Error("Score parse failed: "+raw1.slice(0,80));
 
@@ -580,6 +630,11 @@ No other text.`;
     const newVA={...S.viewingAttempt};newVA[qIdx]=attemptIdx;
     set({loading:false,attempts:savedAttempts,currentQ:qIdx,amode:"text",transcript:"",recording:false,error:null,retryMode:{...S.retryMode,[qIdx]:false},viewingAttempt:newVA});
 
+    // TH-9: freestyle mode — infer context and queue next question
+    if(S.freestyle && qIdx===S.questions.length-1){
+      inferContextAndNext(answerText);
+    }
+
     // ── PART 2: Feedback text (~5s, 300 tokens) ──
     setTimeout(async()=>{
       try{
@@ -587,7 +642,7 @@ No other text.`;
 Use only single quotes inside values. Max 25 words each field.
 Return ONLY JSON:
 {"content_fb":"positive feedback on content","content_worked":"one specific strength","content_improve":"one specific improvement","delivery_fb":"feedback on delivery and structure","next_step":"one concrete encouraging next action","comparison":"how this compares to ideal in one sentence"}`;
-        const raw2=await claude([{role:"user",content:context}],sys2,300);
+        const raw2=await apexEngine([{role:"user",content:context}],sys2,300);
         const s2=JSON.parse(cleanJSON(raw2));
         const upd={...S.attempts};
         if(!upd[qIdx]?.[attemptIdx])return;
@@ -614,17 +669,13 @@ Return ONLY JSON:
     // ── PART 3: Coached model answer (~6s, 250 tokens) ──
     setTimeout(async()=>{
       try{
-        const sys3=`You are an expert communication coach. Write a polished 2-minute spoken model answer (250-300 words) for this interview question.
-Structure: Strong opening statement → Context/Situation (what was happening) → Key actions taken → Result and impact → Forward-looking close.
-Use first person. Keep the candidate's real examples. Natural spoken language, not formal prose.
-Add inline delivery cues using these exact HTML tags within the paragraph text — NOT on separate lines:
-<span class="dm-pause">[pause]</span> before a key point to let it land.
-<span class="dm-breathe">[breathe]</span> at natural transitions between sections.
-<span class="dm-slow">[slow]</span> before important figures, names or conclusions.
-<span class="dm-stress">[stress]</span> on the single most important word in a sentence.
-Maximum 2-3 markers per paragraph. Place them inline within sentences. Single quotes only inside JSON.
-Return ONLY JSON: {"model_answer":"the full answer with inline span tags","synthesis_note":"key improvement in one sentence"}`;
-        const raw3=await claude([{role:"user",content:`Role: ${S.role}\nQ: ${q.question}\nAnswer: ${ans}\nBackground: ${resumeSnip}`}],sys3,500);
+        const sys3=`You are an expert communication coach. Write a polished 2-minute spoken model answer (250-350 words) for this interview question.
+Structure: Strong opening statement then Context/Situation then Key actions taken then Result and impact then Forward-looking close.
+Use first person. Keep the candidate real examples. Natural spoken flowing language, not formal prose. NO stage directions or cues inside the text — just clean speakable paragraphs.
+SEPARATELY give a one-sentence delivery guide on where to pause, slow down and stress key words.
+Use double quotes for JSON, no apostrophes inside values, no line-break characters inside values.
+Return ONLY valid JSON with no markdown: {"model_answer":"clean flowing answer in paragraphs","synthesis_note":"one sentence on the key improvement","delivery_guide":"one sentence on where to pause, slow down and stress"}`;
+        const raw3=await apexEngine([{role:"user",content:`Role: ${S.role}\nQ: ${q.question}\nAnswer: ${ans}\nBackground: ${resumeSnip}`}],sys3,500);
         const s3=JSON.parse(cleanJSON(raw3));
         const upd={...S.attempts};
         if(!upd[qIdx]?.[attemptIdx])return;
@@ -685,22 +736,9 @@ function playFull(qIdx,ai){
   speak(script,()=>set({playingSection:`full_${qIdx}_${ai}`}),()=>set({playingSection:null}));
 }
 function playYours(qIdx,ai){
-  // Use playRecording directly — same as Replay button, same blob key
-  const blobKey=`${qIdx}_${ai}`;
-  if(S.audioBlobs[blobKey]){playRecording(blobKey);return;}
-  // Blob not ready — show message, no TTS fallback (avoids machine voice confusion)
-  var waited=0;
-  function tryPlay(){
-    if(S.audioBlobs[blobKey]){playRecording(blobKey);return;}
-    waited+=200;
-    if(waited<3000){setTimeout(tryPlay,200);return;}
-    set({error:'Recording not available — answer was submitted as text only.'});return;
-    set({playingSection:`yours_${qIdx}_${ai}`});
-    speak("Your answer: "+text.slice(0,500),()=>set({playingSection:`yours_${qIdx}_${ai}`}),()=>set({playingSection:null}));
-  }
-  setTimeout(tryPlay,200);
+  // TH-dedicated: same blob key logic as thToggleReplay
+  thToggleReplay(qIdx,ai);
 }
-
 function playIdeal(qIdx,ai){
   const fb=(S.attempts[qIdx]||[])[ai]?.feedback;if(!fb?.model_answer)return;
   set({playingSection:`ideal_${qIdx}_${ai}`});
@@ -712,7 +750,7 @@ function playIdeal(qIdx,ai){
 }
 
 // ── VOICE RECORDING (Speech recognition + MediaRecorder for playback) ──
-let recognition=null, mediaRecorder=null, audioChunks=[], currentBlobKey=null;
+let recognition=null, mediaRecorder=null, audioChunks=[], currentBlobKey=null, _lastRecordingBlob=null;
 let audioCtx=null, analyser=null, micStream=null, meterInterval=null;
 
 function startVoice(){
@@ -729,6 +767,8 @@ function startVoice(){
     mediaRecorder.ondataavailable=e=>{if(e.data.size>0)audioChunks.push(e.data);};
     mediaRecorder.onstop=()=>{
       const blob=new Blob(audioChunks,{type:mimeType});
+      // ALWAYS hold the blob — survives both flows (stop-then-analyse and analyse-while-recording)
+      _lastRecordingBlob=blob;
       if(currentBlobKey){
         const nb={...S.audioBlobs};nb[currentBlobKey]=blob;
         set({audioBlobs:nb});
@@ -774,31 +814,54 @@ function stopVoice(){
 function toggleVoice(){S.recording?stopVoice():startVoice();}
 
 // Enhancement 1: play back recorded audio
-let _activeAudio=null;
-function playRecording(key){
-  // Stop any currently playing audio first
-  if(_activeAudio){_activeAudio.pause();_activeAudio=null;set({playingRecording:null});}
-  const blob=S.audioBlobs[key];if(!blob){console.warn('No blob for key:',key);return;}
+// ── TH AUDIO PLAYER (dedicated — not shared with VC) ──
+let _thActiveAudio=null;
+function thPlayRecording(key){
+  // stop anything already playing (TH or VC side)
+  thStopPlayback();
+  if(typeof stopVcPlayback==='function')stopVcPlayback();
+  const blob=S.audioBlobs[key];
+  if(!blob){set({error:'Recording not found — please record again.'});setTimeout(render,30);return;}
   const url=URL.createObjectURL(blob);
   const audio=new Audio(url);
-  _activeAudio=audio;
+  _thActiveAudio=audio;
   set({playingRecording:key});
-  audio.play().catch(e=>{console.error('Playback failed:',e);_activeAudio=null;URL.revokeObjectURL(url);set({playingRecording:null,error:'Playback failed — try again'});setTimeout(render,30);});
-  audio.onended=()=>{URL.revokeObjectURL(url);_activeAudio=null;set({playingRecording:null});setTimeout(render,30);};
+  setTimeout(render,30);
+  audio.play().catch(e=>{console.error('TH playback failed:',e);_thActiveAudio=null;URL.revokeObjectURL(url);set({playingRecording:null,error:'Playback failed — try again'});setTimeout(render,30);});
+  audio.onended=()=>{URL.revokeObjectURL(url);_thActiveAudio=null;set({playingRecording:null});setTimeout(render,30);};
 }
-function stopRecording(){
-  if(_activeAudio){_activeAudio.pause();_activeAudio=null;set({playingRecording:null});setTimeout(render,30);}
+function thStopPlayback(){
+  if(_thActiveAudio){try{_thActiveAudio.pause();}catch(e){}_thActiveAudio=null;set({playingRecording:null});setTimeout(render,30);}
 }
-function toggleReplay(qIdx,ai){
+function thHasPreviewBlob(){
+  const key=`${S.currentQ}_${(S.attempts[S.currentQ]||[]).length}`;
+  return !!(_lastRecordingBlob||S.audioBlobs[key]);
+}
+function thPreviewRecording(){
+  // Play the just-recorded blob before submitting
+  if(S.playingRecording==='preview'){thStopPlayback();return;}
+  const key=`${S.currentQ}_${(S.attempts[S.currentQ]||[]).length}`;
+  const blob=_lastRecordingBlob||S.audioBlobs[key];
+  if(!blob){set({error:'Recording not found — please record again.'});setTimeout(render,30);return;}
+  thStopPlayback();
+  if(typeof stopVcPlayback==='function')stopVcPlayback();
+  const url=URL.createObjectURL(blob);
+  const audio=new Audio(url);
+  _thActiveAudio=audio;
+  set({playingRecording:'preview'});
+  setTimeout(render,30);
+  audio.play().catch(e=>{_thActiveAudio=null;URL.revokeObjectURL(url);set({playingRecording:null,error:'Playback failed — try again'});setTimeout(render,30);});
+  audio.onended=()=>{URL.revokeObjectURL(url);_thActiveAudio=null;set({playingRecording:null});setTimeout(render,30);};
+}
+function thToggleReplay(qIdx,ai){
   const key=`${qIdx}_${ai}`;
-  if(S.playingRecording===key){
-    stopRecording();
-    setTimeout(render,30);
-  }else{
-    playYours(qIdx,ai);
-    setTimeout(render,30);
-  }
+  if(S.playingRecording===key){thStopPlayback();}else{thPlayRecording(key);}
 }
+// Legacy aliases so existing onclick handlers keep working
+function playRecording(key){thPlayRecording(key);}
+function stopRecording(){thStopPlayback();}
+function toggleReplay(qIdx,ai){thToggleReplay(qIdx,ai);}
+
 
 // Enhancement 2: analyse voice metrics from transcript + audio data
 async function analyseVoice(qIdx,ai){
@@ -857,13 +920,31 @@ async function analyseVoice(qIdx,ai){
   // ── 3-PERSONA DELIVERY COACHING (same as Communication Coach) ──
   const q=S.questions[qIdx];
   const questionCtx=q?q.question:"interview question";
-  const sysVC=`You are an expert speaking coach. Analyse this spoken interview answer delivery. Focus ONLY on HOW they spoke — not content quality.
-Context: Role: ${S.role||"professional"}. Question: "${questionCtx.slice(0,100)}". Duration: ${Math.round(dur)}s. WPM: ${wpm}. Fillers: ${fillerCount} (${uniqueFillers.join(',')||'none'}). Clarity: ${clarity}%.
-Return ONLY valid JSON:
-{"mckinsey":{"tip":"Consulting Firm Style: structured delivery tip, 1-2 sentences"},"harvard":{"tip":"Research Org Style: evidence-based delivery tip, 1-2 sentences"},"execcoach":{"tip":"Executive Coach: presence and authority tip, 1-2 sentences"},"top_priority":"Single most impactful delivery improvement","overall_verdict":"2 sentence encouraging overall delivery assessment","coached_version":"Rewrite opening 2-3 sentences as polished confident version. Keep their message. 40-60 words."}`;
+  const sysVC=`You are three world-class coaches analysing the same spoken interview answer. Each coach has a distinct philosophy and voice. Be specific to what the candidate actually said — reference their words, their topic, their examples.
+
+COACH 1 — CONSULTING FIRM (McKinsey/BCG/Bain):
+Philosophy: Pyramid Principle — answer first, then support with data. MECE structure. Every claim needs evidence. Direct, crisp, no filler.
+Voice: assertive, uses "Lead with your answer", "What is the so-what?", "Give me the number", "Structure this as three things".
+Feedback: Reference what they said. Where did they bury the headline? Where were they vague? Where did they need data?
+
+COACH 2 — RESEARCH ORG (Harvard/Academic):
+Philosophy: Evidence-based, intellectually rigorous, nuanced. Never oversimplify. Precise language — "suggests" not "proves".
+Voice: thoughtful, uses "The evidence you cited...", "How would you qualify that?", "Demonstrate your analytical depth".
+Feedback: Reference what they said. Where did they make unqualified claims? Where did they show genuine insight?
+
+COACH 3 — EXECUTIVE COACH (ICF/Marshall Goldsmith):
+Philosophy: Presence, authenticity, gravitas. How did they make the room feel? Silence is a tool. Own the space.
+Voice: warm but challenging, uses "Own that pause", "Let it land", "Your energy dropped when you said...".
+Feedback: Reference what they said. Where did they rush? Where did they show confidence? Where did presence break down?
+
+SENIORITY ADAPTATION: ${(S.level&&["Director","VP / Head of","C-Suite / Executive","Board / Partner"].includes(S.level))?`This candidate is at ${S.level} level — your feedback and rewrites MUST be role-specific: reference the decisions, stakeholders and language of a ${S.level} ${S.role||"leader"}. Coach them on executive positioning, not just delivery basics.`:(S.level&&["Manager","Senior Manager / Lead"].includes(S.level))?`This candidate is at ${S.level} level — blend role-relevant context for a ${S.role||"professional"} with delivery fundamentals.`:`Focus on delivery fundamentals — clear structure, confidence, pacing. Keep coaching accessible.`}
+Context: Role: ${S.role||"professional"}${S.level?` (${S.level})`:""}. Question: "${questionCtx.slice(0,150)}". Duration: ${Math.round(dur)}s. WPM: ${wpm}. Fillers: ${fillerCount} (${uniqueFillers.join(',')||'none'}). Clarity: ${clarity}%.
+
+Return ONLY valid JSON, no markdown:
+{"mckinsey":{"headline":"one sentence key structural observation","feedback":"3-4 sentences specific coaching referencing their actual words. Direct and precise.","rewrite":"Rewrite opening 2-3 sentences using Pyramid Principle. 40-60 words.","framework":"Pyramid Principle — lead with answer, support with data"},"harvard":{"headline":"one sentence key intellectual observation","feedback":"3-4 sentences specific coaching referencing their actual words. Note depth and rigour.","rewrite":"Rewrite opening 2-3 sentences with academic precision. 40-60 words.","framework":"Evidence-based communication — qualify claims, show analytical depth"},"execcoach":{"headline":"one sentence key presence observation","feedback":"3-4 sentences specific coaching referencing their actual words. Note energy, confidence, authenticity.","rewrite":"Rewrite opening 2-3 sentences with gravitas and warmth. 40-60 words.","framework":"ICF Coaching and Marshall Goldsmith — presence, authenticity, impact"},"top_priority":"single most impactful improvement across all three perspectives","overall_verdict":"2-3 encouraging sentences on delivery strengths and one growth area"}`
 
   try{
-    const raw=await claude([{role:"user",content:`Transcript: ${transcript.slice(0,600)}`}],sysVC,500);
+    const raw=await apexEngine([{role:"user",content:`Transcript: ${transcript.slice(0,800)}`}],sysVC,1200);
     const personas=JSON.parse(cleanJSON(raw));
     // Store personas with the attempt
     const upd={...S.attempts};
@@ -896,10 +977,18 @@ function onFile(type,file){
 }
 function submitText(){const ta=document.getElementById("ans-input");evalAnswer(S.currentQ,ta?ta.value:"");}
 function submitVoice(){
-  // set blob key BEFORE stopping — onstop fires async so key must exist first
   const attemptIdx=(S.attempts[S.currentQ]||[]).length;
-  currentBlobKey=`${S.currentQ}_${attemptIdx}`;
-  if(S.recording)stopVoice();
+  const key=`${S.currentQ}_${attemptIdx}`;
+  currentBlobKey=key;
+  if(S.recording){
+    // Flow A: still recording — stop now; onstop stores under currentBlobKey
+    stopVoice();
+  }else if(_lastRecordingBlob&&!S.audioBlobs[key]){
+    // Flow B: user stopped mic earlier — move held blob to this attempt key
+    const nb={...S.audioBlobs};nb[key]=_lastRecordingBlob;
+    set({audioBlobs:nb});
+  }
+  _lastRecordingBlob=null;
   evalAnswer(S.currentQ,S.transcript);
 }
 document.addEventListener("input",e=>{if(e.target.id==="ans-input"){const cc=document.getElementById("cc");if(cc)cc.textContent=e.target.value.length+" chars";}});
@@ -919,7 +1008,7 @@ Return ONLY valid JSON:
 {"readiness":number,"label":"Interview Ready|Almost There|Needs Practice|Not Ready","verdict":"2 sentences personalised to their actual answers and experience shown","content_avg":number,"delivery_avg":number,"pronunciation_avg":number,"articulation_avg":number,"strengths":["specific strength observed in their actual answers"],"gaps":["specific gap to address — substance focused not style focused"],"pronunciation_summary":"2 sentences on pronunciation pattern","top_priority":"single most important thing to improve before the real interview","audio_tip":"one specific spoken delivery coaching tip"}
 Scores 0-100. Be fair — a candidate who gave real specific examples with good outcomes should score 70+.`;
   try{
-    const raw=await claude([{role:"user",content:`Role: ${S.role}\nFlagged words: ${allFlagged.map(w=>w.word).join(", ")||"none"}\n\n${JSON.stringify(qa,null,1200)}`}],sys);
+    const raw=await apexEngine([{role:"user",content:`Role: ${S.role}\nFlagged words: ${allFlagged.map(w=>w.word).join(", ")||"none"}\n\n${JSON.stringify(qa,null,1200)}`}],sys);
     const results=JSON.parse(cleanJSON(raw));
     results.flagged_words=allFlagged;
     set({results,loading:false,screen:"results"});
@@ -1093,14 +1182,22 @@ function stopVoiceCoach(){
 
 function toggleVoiceCoach(){S.vcRecording?stopVoiceCoach():startVoiceCoach();}
 
+// ── VC AUDIO PLAYER (dedicated — not shared with TH) ──
+let _vcActiveAudio=null;
+function stopVcPlayback(){
+  if(_vcActiveAudio){try{_vcActiveAudio.pause();}catch(e){}_vcActiveAudio=null;set({playingRecording:null});setTimeout(render,30);}
+}
 function playVcRecording(){
-  stopRecording();
-  if(!vcAudioBlob)return;
+  // toggle: if VC audio is playing, stop it
+  if(S.playingRecording==="vc"){stopVcPlayback();return;}
+  thStopPlayback();
+  if(!vcAudioBlob){set({error:'Recording not found — please record again.'});setTimeout(render,30);return;}
   const url=URL.createObjectURL(vcAudioBlob);
   const audio=new Audio(url);
-  _activeAudio=audio;set({playingRecording:"vc"});
-  audio.play();
-  audio.onended=()=>{URL.revokeObjectURL(url);_activeAudio=null;set({playingRecording:null});};
+  _vcActiveAudio=audio;set({playingRecording:"vc"});
+  setTimeout(render,30);
+  audio.play().catch(e=>{_vcActiveAudio=null;URL.revokeObjectURL(url);set({playingRecording:null,error:'Playback failed — try again'});setTimeout(render,30);});
+  audio.onended=()=>{URL.revokeObjectURL(url);_vcActiveAudio=null;set({playingRecording:null});setTimeout(render,30);};
 }
 
 async function analyseVoiceCoach(){
@@ -1149,7 +1246,7 @@ Return ONLY valid JSON:
 {"mckinsey":{"tip":"Consulting Firm Style tip: pyramid principle, structured delivery, lead with answer first, 1-2 sentences"},"harvard":{"tip":"Research Org Style tip: evidence-based argument, logical progression, back claims with proof, 1-2 sentences"},"execcoach":{"tip":"Executive coach tip: presence, authority, authenticity, 1-2 sentences"},"top_priority":"Single most impactful delivery improvement in 1 sentence","overall_verdict":"2 sentence overall delivery assessment","coached_version":"Rewrite the first 2-3 sentences of their transcript as a polished, confident version — tighter language, no fillers, strong opening. Keep their message and examples. 40-60 words."}`;
 
   try{
-    const raw=await claude([{role:"user",content:`Transcript: ${S.vcTranscript.slice(0,600)}`}],sysVC,500);
+    const raw=await apexEngine([{role:"user",content:`Transcript: ${S.vcTranscript.slice(0,600)}`}],sysVC,500);
     const personas=JSON.parse(cleanJSON(raw));
     set({vcMetrics:metrics,vcPersonas:personas,vcLoading:false});
   }catch(e){
@@ -1161,7 +1258,8 @@ function switchPath(path){
   if(S.vcRecording)stopVoiceCoach();
   if(S.recording)stopVoice();
   stopSpeech();
-  stopRecording();
+  thStopPlayback();
+  if(typeof stopVcPlayback==='function')stopVcPlayback();
   if(path==='interview'){
     document.getElementById('stepbar').style.display='flex';
     document.getElementById('path-toggle').style.display='flex';
@@ -1211,7 +1309,7 @@ Style: ${p.focus}
 RULES: Keep the same core message and real examples. Do NOT invent new facts. 60-80 words. Natural spoken English — will be read aloud.
 Return ONLY valid JSON: {"rewrite":"the rewritten opening","style_note":"1 sentence explaining the key stylistic choice made"}`;
   try{
-    const raw=await claude([{role:"user",content:`Topic: ${S.vcTopic||(S.vcPreset||"general speaking")}\nOriginal speech: ${S.vcTranscript.slice(0,500)}`}],sys,300);
+    const raw=await apexEngine([{role:"user",content:`Topic: ${S.vcTopic||(S.vcPreset||"general speaking")}\nOriginal speech: ${S.vcTranscript.slice(0,500)}`}],sys,300);
     const parsed=JSON.parse(cleanJSON(raw));
     set({vcPersonaLoading:false,vcPersonaText:{text:parsed.rewrite||"",note:parsed.style_note||"",name:p.name}});
   }catch(e){
@@ -1224,19 +1322,19 @@ async function generatePracticeScript(questionOverride){
   const preset=VC_PRESETS.find(p=>p.id===S.vcPreset);
   const topic=questionOverride||(S.vcTopic||(preset?.label||"general speaking"));
   set({vcScriptLoading:true,vcScript:null,error:null});
-  const sys=`You are an expert speech coach and communication trainer. Generate a 180-200 word practice script for someone practising "${topic}" in the context of ${preset?.prompt||"professional speaking"}.
+  const sys=`You are an expert speech coach. Write a polished practice script someone can read aloud to practise "${topic}" in the context of ${preset?.prompt||"professional speaking"}.
 
-FORMAT: Put each cue on its OWN LINE before the sentence.
-Example:
-[PAUSE]
-Good morning everyone.
-[STRESS: fundamentally]
-This fundamentally (fun-duh-MEN-tuh-lee) changed how we work.
+WRITE A CLEAN, NATURAL SCRIPT:
+- 250-350 words, flowing paragraphs (2-4 paragraphs), no stage directions or cues inside the text.
+- Real, speakable language with a clear opening, substance, and a strong close.
+- Sound like a confident human speaking, not a list of bullet points.
 
-Cues: [PAUSE] [BREATHE] [SLOW] [STRESS: word]. Phonetic hints inline. 100-200 words.
-Return ONLY valid JSON: {"script":"the annotated script text","title":"a short title for this script e.g. The Problem-Solution Opening","tip":"one key delivery tip for this script in 1 sentence"}`;
+SEPARATELY, give a one-sentence delivery guide describing WHERE to pause, slow down, or stress key words — as advice, not markers in the script.
+
+Use double quotes for JSON, no apostrophes inside values, no line-break characters inside the script value (use spaces).
+Return ONLY valid JSON: {"script":"the clean flowing script as plain paragraphs","title":"a short evocative title e.g. The Problem-Solution Opening","tip":"one voice/tone delivery tip in 1 sentence","delivery_guide":"one sentence on where to pause, slow down and stress for impact"}`;
   try{
-    const raw=await claude([{role:"user",content:`Scenario: ${topic}\nType: ${preset?.label||"General"}\nContext: ${preset?.prompt||"professional speaking"}`}],sys,600);
+    const raw=await apexEngine([{role:"user",content:`Scenario: ${topic}\nType: ${preset?.label||"General"}\nContext: ${preset?.prompt||"professional speaking"}`}],sys,900);
     const parsed=JSON.parse(cleanJSON(raw));
     set({vcScriptLoading:false,vcScript:parsed});setTimeout(renderScriptHTML,50);
   }catch(e){
@@ -1247,15 +1345,15 @@ Return ONLY valid JSON: {"script":"the annotated script text","title":"a short t
 function renderScriptHTML(){
   var el=document.getElementById('vc-script-text');
   if(!el||!S.vcScript||!S.vcScript.script)return;
-  el.innerHTML=S.vcScript.script.split('\n').map(function(line){
-    var t=line.trim();
-    if(!t)return '<div style="height:6px"></div>';
-    if(t==='[PAUSE]')return '<div style="color:#F59E0B;font-size:11px;font-weight:700;margin-top:10px">[PAUSE]</div>';
-    if(t==='[BREATHE]')return '<div style="color:#06B6D4;font-size:11px;font-weight:700;margin-top:10px">[BREATHE]</div>';
-    if(t==='[SLOW]')return '<div style="color:#7B5CF0;font-size:11px;font-weight:700;margin-top:10px">[SLOW DOWN]</div>';
-    var sm=t.match(/^\[STRESS:\s*(.+)\]$/);
-    if(sm)return '<div style="color:#4F8EF7;font-size:11px;font-weight:700;margin-top:10px">[STRESS: '+sm[1]+']</div>';
-    return '<div style="font-size:13px;line-height:1.8;margin-bottom:2px">'+t.replace(/\(([^)]+)\)/g,'<span style="color:#8B92A8;font-size:11px;font-style:italic"> ($1)</span>')+'</div>';
+  // Clean flowing paragraphs — split on blank lines or sentences, no markers
+  var paras=S.vcScript.script.split(/\n\n+/).filter(function(p){return p.trim();});
+  if(paras.length<=1){
+    // single block — split into readable paragraphs every ~2 sentences
+    var sentences=S.vcScript.script.match(/[^.!?]+[.!?]+/g)||[S.vcScript.script];
+    paras=[];for(var i=0;i<sentences.length;i+=3){paras.push(sentences.slice(i,i+3).join(' ').trim());}
+  }
+  el.innerHTML=paras.map(function(p){
+    return '<div style="font-size:14px;line-height:1.85;margin-bottom:14px;color:var(--text1)">'+p.trim()+'</div>';
   }).join('');
 }
 function playScript(){
@@ -1311,13 +1409,23 @@ function renderSetup(){
   <p style="font-size:13px;color:var(--text2);max-width:500px;line-height:1.7">Upload any document — resume, whitepaper, certification notes. Apex Engine detects what it is and generates tailored questions.</p>
 </div>
 
+<div class="card" style="background:linear-gradient(135deg,rgba(6,182,212,.08),rgba(123,92,240,.08));border:0.5px solid rgba(6,182,212,.25)">
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between">
+    <div>
+      <div class="ctitle" style="margin-bottom:2px">Ready to practise?</div>
+      <div style="margin:0;font-size:13px;color:var(--text2);line-height:1.5">Start instantly, or add documents below for more tailored coaching.</div>
+    </div>
+    <button class="btn" style="padding:11px 20px;white-space:nowrap" onclick="startFreestyle()">🎙️ Start practising now →</button>
+  </div>
+</div>
+
 <div class="card">
-  <div class="ctitle">Upload documents</div>
-  <div class="csub">Any document type — auto-detected and adapted</div>
+  <div class="ctitle">Upload documents <span style="font-size:11px;font-weight:400;color:var(--text3)">(optional)</span></div>
+  <div class="csub">Add for tailored coaching — any document type, auto-detected</div>
   <div class="ugrid">
     <div class="dz ${resume?'ok':''}">
       <input type="file" accept=".pdf,.txt,.doc,.docx" onchange="onFile('resume',this.files[0])"/>
-      <div class="dz-lbl">My Document *</div>
+      <div class="dz-lbl">My Document</div>
       <div class="dz-icon">${resume?'✅':'📄'}</div>
       <div class="dz-t">${resume?resume.name:'Upload document'}</div>
       <div class="dz-h">Resume · Whitepaper · Study notes</div>
@@ -1348,11 +1456,13 @@ function renderSetup(){
   <div class="csub">What role and context are you practising for?</div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
     <div>
-      <label>Role *</label>
-      <input class="inp" type="text" list="role-list" placeholder="e.g. Senior IT PM, CISM candidate…" value="${S.role}" oninput="S.role=this.value" onchange="_autoSavePrefs()"/>
+      <label>Level</label>
+      <select class="inp" onchange="S.level=this.value;_autoSavePrefs()" style="cursor:pointer">
+        ${['','Graduate / Entry','Individual Contributor','Senior IC','Manager','Senior Manager / Lead','Director','VP / Head of','C-Suite / Executive','Board / Partner'].map(l=>`<option value="${l}" ${S.level===l?'selected':''}>${l||'Select level…'}</option>`).join('')}
+      </select>
     </div>
     <div>
-      <label>Organisation (optional)</label>
+      <label>Organisation</label>
       <input class="inp" type="text" list="org-list" placeholder="e.g. Pharma, Healthcare…" value="${S.company}" oninput="S.company=this.value" onchange="_autoSavePrefs()"/>
     </div>
   </div>
@@ -1361,24 +1471,23 @@ function renderSetup(){
 <div class="card">
   <div class="ctitle">Scenario</div>
   <div class="csub">What are you practising for?</div>
-  <div class="scenario-grid">
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,260px));gap:10px;justify-content:center;margin-bottom:10px">
     <div class="scenario-btn ${S.qtype==='mix'?'on':''}" onclick="set({qtype:'mix'});_autoSavePrefs()">
-      <div class="scenario-icon">🎯</div><div class="scenario-label">Interview Q&A</div>
+      <div class="scenario-icon">🎯</div><div class="scenario-label">Interview</div>
+    </div>
+    <div class="scenario-btn ${S.qtype==='certification'?'on':''}" onclick="set({qtype:'certification'});_autoSavePrefs()">
+      <div class="scenario-icon">📝</div><div class="scenario-label">Certification</div>
+    </div>
+  </div>
+  <div class="scenario-grid">
+    <div class="scenario-btn ${S.qtype==='pitch'?'on':''}" onclick="set({qtype:'pitch'});_autoSavePrefs()">
+      <div class="scenario-icon">🚀</div><div class="scenario-label">Elevator Pitch</div>
     </div>
     <div class="scenario-btn ${S.qtype==='presentation'?'on':''}" onclick="set({qtype:'presentation'});_autoSavePrefs()">
       <div class="scenario-icon">📊</div><div class="scenario-label">Presentation</div>
     </div>
-    <div class="scenario-btn ${S.qtype==='pitch'?'on':''}" onclick="set({qtype:'pitch'});_autoSavePrefs()">
-      <div class="scenario-icon">🚀</div><div class="scenario-label">Elevator pitch</div>
-    </div>
-    <div class="scenario-btn ${S.qtype==='behavioral'?'on':''}" onclick="set({qtype:'behavioral'});_autoSavePrefs()">
-      <div class="scenario-icon">🧠</div><div class="scenario-label">Behavioural</div>
-    </div>
-    <div class="scenario-btn ${S.qtype==='technical'?'on':''}" onclick="set({qtype:'technical'});_autoSavePrefs()">
-      <div class="scenario-icon">💡</div><div class="scenario-label">Technical</div>
-    </div>
-    <div class="scenario-btn ${S.qtype==='certification'?'on':''}" onclick="set({qtype:'certification'});_autoSavePrefs()">
-      <div class="scenario-icon">📝</div><div class="scenario-label">Certification</div>
+    <div class="scenario-btn ${S.qtype==='storytelling'?'on':''}" onclick="set({qtype:'storytelling'});_autoSavePrefs()">
+      <div class="scenario-icon">📖</div><div class="scenario-label">Storytelling</div>
     </div>
   </div>
 </div>
@@ -1425,6 +1534,7 @@ function renderSetup(){
   ${!resume&&!S.useCustomQ?'disabled style="opacity:.4;cursor:not-allowed"':''}>
   ${S.useCustomQ?'Start practice →':'Generate questions & start →'}
 </button>
+
 ${S.error?`<div class="err" style="margin-top:10px">${S.error}</div>`:''}
 ${S.loading?`<div class="loading"><div class="spin"></div><div class="lmsg">${S.lmsg}</div><div class="lsub">${S.lsub}</div></div>`:''}
 `;}
@@ -1450,7 +1560,7 @@ function renderInterview(){
   return`
 <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:11px 15px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:7px;margin-bottom:12px">
   <div style="display:flex;gap:6px;flex-wrap:wrap">
-    <span style="font-size:11px;padding:3px 9px;border-radius:20px;background:rgba(6,182,212,.1);color:var(--teal);border:0.5px solid rgba(6,182,212,.2)">🎯 ${S.role}</span>
+    ${S.freestyle?(S.level?`<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:rgba(6,182,212,.1);color:var(--teal);border:0.5px solid rgba(6,182,212,.2)">🎯 ${S.level}</span>`:''):`<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:rgba(6,182,212,.1);color:var(--teal);border:0.5px solid rgba(6,182,212,.2)">🎯 ${S.role}</span>`}
     ${S.company?`<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)">${S.company}</span>`:""}
   </div>
   <span style="font-size:11px;color:var(--text3)">${S.questions.filter((_,i)=>(S.attempts[i]||[]).length>0).length}/${S.questions.length} answered</span>
@@ -1459,12 +1569,13 @@ function renderInterview(){
 <div class="qbar"><div class="qfill" style="width:${pct}%"></div></div>
 <div class="qcard">
   <div class="qtag-row">
-    <span class="qtag ${isTech?"qtag-tech":"qtag-beh"}">${isTech?"💻 Technical":"🧠 Behavioral"}</span>
+    <span class="qtag ${isTech?"qtag-tech":"qtag-beh"}" ${q.freestyleOpener?'style="display:none"':''}>${isTech?"💻 Technical":"🧠 Behavioral"}</span>
     <span style="font-size:11px;color:var(--text3)">${q.topic}</span>
+    ${S.freestyle&&S.inferredContext?`<span onclick="editInferredContext()" style="font-size:10px;padding:3px 9px;border-radius:20px;background:rgba(6,182,212,.1);color:var(--teal);border:0.5px solid rgba(6,182,212,.25);cursor:pointer;margin-left:auto" title="Tap to correct">🔍 ${S.inferredContext.domain} · ${S.inferredContext.seniority} ✏️</span>`:""}
     ${atts.length>0?`<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(79,142,247,.1);color:var(--accent);border:0.5px solid rgba(79,142,247,.2)">${atts.length} attempt${atts.length>1?"s":""}</span>`:""}
   </div>
-  <div class="qtext">${q.question}</div>
-  <div class="qhint">💡 <strong>Looking for:</strong> ${q.interviewer_note}</div>
+  <div class="qtext" ${q.freestyleOpener?'style="text-align:center;color:var(--text2);font-weight:500"':''}>${q.question}</div>
+  ${q.interviewer_note?`<div class="qhint">💡 <strong>Looking for:</strong> ${q.interviewer_note}</div>`:""}
   ${q.resume_hook?`<div style="font-size:11px;color:var(--text3);padding:6px 12px;background:var(--bg3);border-radius:var(--r);border-left:2px solid var(--purple);line-height:1.5;margin-bottom:12px">🎯 <strong style="color:var(--purple)">Why this question:</strong> ${q.resume_hook}</div>`:""}
 
   ${/* ATTEMPT TABS */atts.length>1?`
@@ -1492,11 +1603,14 @@ function renderInterview(){
     <button class="btn" onclick="submitText()">Submit →</button>
   </div>`:`
   <div class="voice-wrap">
-    <button class="voice-btn ${S.recording?"rec":"idle"}" onclick="toggleVoice()">${S.recording?"🔴":"🎙️"}</button>
+    <div style="display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+      <button class="voice-btn ${S.recording?"rec":"idle"}" onclick="toggleVoice()">${S.recording?"🔴":"🎙️"}</button>
+      ${S.transcript.trim()&&thHasPreviewBlob()&&!S.recording?'<button class="btn-outline" onclick="thPreviewRecording()">'+(S.playingRecording==='preview'?'⏹ Stop':'🔊 Replay')+'</button>':''}
+      ${S.transcript.trim()&&!S.recording?`<button class="btn" onclick="submitVoice()">🔬 Analyse</button>`:""}
+    </div>
     <div style="font-size:12px;color:var(--text2)">${S.recording?"Recording — tap to stop":"Tap to start speaking"}</div>
     <div class="voice-transcript" id="voice-text">${S.transcript||"Your answer appears here…"}</div>
     <div style="font-size:10px;color:var(--text3)">Best in Chrome on desktop</div>
-    ${S.transcript.trim()?`<button class="btn" onclick="submitVoice()">Submit voice answer →</button>`:""}
   </div>`}`:""}
 
   
@@ -1517,9 +1631,9 @@ function renderInterview(){
         <button class="btn-outline" style="font-size:11px;padding:4px 8px" onclick="set({vcScript:null,vcScriptLoading:false})">✕</button>
       </div>
     </div>
-    ${S.vcScript.tip?`<div style="font-size:11px;color:var(--teal);padding:5px 8px;background:rgba(6,182,212,.06);border-radius:6px;margin-bottom:8px;border-left:2px solid var(--teal)">💡 ${S.vcScript.tip}</div>`:""}
-    <div id="vc-script-text" style="background:var(--bg3);border-radius:var(--r);padding:10px;border:0.5px solid var(--border);margin-bottom:4px"></div>
-    <div style="font-size:10px;color:var(--text3);margin-top:4px"><span style="color:var(--amber)">■</span> PAUSE &nbsp;<span style="color:var(--teal)">■</span> BREATHE &nbsp;<span style="color:var(--purple)">■</span> SLOW &nbsp;<span style="color:var(--accent)">■</span> STRESS</div>
+    ${S.vcScript.tip?`<div style="font-size:11px;color:var(--teal);padding:5px 8px;background:rgba(6,182,212,.06);border-radius:6px;margin-bottom:6px;border-left:2px solid var(--teal)">💡 ${S.vcScript.tip}</div>`:""}
+    ${S.vcScript.delivery_guide?`<div style="font-size:11px;color:var(--amber);padding:5px 8px;background:rgba(245,158,11,.06);border-radius:6px;margin-bottom:8px;border-left:2px solid var(--amber)">🎯 ${S.vcScript.delivery_guide}</div>`:""}
+    <div id="vc-script-text" style="background:var(--bg3);border-radius:var(--r);padding:14px;border:0.5px solid var(--border)"></div>
   </div>`:""}
   `:""}
 
@@ -1577,21 +1691,28 @@ ${(fb.pronunciation?.flagged_words||[]).length>0?`
 </div>
 <!-- Enhancement 1: Audio playback + Enhancement 2: Voice analysis -->
 ${S.attempts[S.currentQ]?.[viewIdx]?.mode==="voice"?`
+${!S.voiceMetrics[`${S.currentQ}_${viewIdx}`]?`
 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">
   ${S.audioBlobs[`${S.currentQ}_${viewIdx}`]?`<button class="ap-btn ${S.playingRecording===S.currentQ+'_'+viewIdx?'ap-btn-stop':'ap-btn-play'}" onclick="toggleReplay(${S.currentQ},${viewIdx})">${S.playingRecording===S.currentQ+'_'+viewIdx?'⏹ Stop':'🔊 Replay my voice'}</button>`:""}
   ${S.analyzingVoice===`${S.currentQ}_${viewIdx}`?
     `<span style="font-size:12px;color:var(--teal)"><span class="spin" style="width:14px;height:14px;border-width:1.5px;display:inline-block;vertical-align:middle;margin-right:5px"></span>Analysing voice…</span>`:
-    S.voiceMetrics[`${S.currentQ}_${viewIdx}`]?
-    `<span style="font-size:11px;color:var(--green)">✅ Voice analysed</span>`:
     `<button class="ap-btn" style="background:var(--purple);color:#fff" onclick="analyseVoice(${S.currentQ},${viewIdx})">🎙️ Analyse my voice</button>`
   }
-</div>
+</div>`:""}
 ${S.voiceMetrics[`${S.currentQ}_${viewIdx}`]?`
-<div style="background:rgba(123,92,240,.06);border:0.5px solid rgba(123,92,240,.2);border-radius:var(--r);padding:13px;margin-top:8px">
-  <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--purple);margin-bottom:10px;font-family:'Syne',sans-serif">🎙️ Voice analysis</div>
+<div style="background:rgba(123,92,240,.06);border:0.5px solid rgba(123,92,240,.2);border-radius:var(--r);padding:14px;margin-top:8px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+    <div>
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--purple);font-family:'Syne',sans-serif">🎙️ Voice delivery score</div>
+      <div style="font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:${(()=>{const m=S.voiceMetrics[S.currentQ+"_"+viewIdx];return m.overallVoice>=75?"var(--green)":m.overallVoice>=50?"var(--amber)":"var(--red)";})()}">${S.voiceMetrics[S.currentQ+"_"+viewIdx].overallVoice}%</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      ${S.audioBlobs[`${S.currentQ}_${viewIdx}`]?`<button class="ap-btn ap-btn-play" onclick="toggleReplay(${S.currentQ},${viewIdx})">${S.playingRecording===S.currentQ+'_'+viewIdx?'⏹ Stop':'🔊 Replay my voice'}</button>`:""}
+    </div>
+  </div>
   <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:10px">
     ${(()=>{const m=S.voiceMetrics[S.currentQ+"_"+viewIdx];return[
-      {v:m.overallVoice+"%",l:"Overall",c:m.overallVoice>=75?"var(--green)":m.overallVoice>=50?"var(--amber)":"var(--red)"},
+      {v:(m.wordCount||m.words||"—"),l:"Words"+(m.duration?" · "+Math.round(m.duration)+"s":""),c:"var(--blue,#5b8def)"},
       {v:m.wpm+" WPM",l:"Pace",c:m.wpm>=120&&m.wpm<=160?"var(--green)":m.wpm>=90&&m.wpm<=180?"var(--amber)":"var(--red)"},
       {v:m.fillerCount,l:"Fillers",c:m.fillerCount===0?"var(--green)":m.fillerCount<=3?"var(--amber)":"var(--red)"},
       {v:m.clarity+"%",l:"Clarity",c:m.clarity>=75?"var(--green)":m.clarity>=50?"var(--amber)":"var(--red)"},
@@ -1602,7 +1723,25 @@ ${S.voiceMetrics[`${S.currentQ}_${viewIdx}`]?`
 </div>`:""}
 `:""}
 
-${(function(){var _vp=(S.attempts[S.currentQ]||[])[viewIdx]&&(S.attempts[S.currentQ]||[])[viewIdx].voicePersonas;if(!_vp)return "";var html='<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:14px;margin-top:10px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;color:var(--purple);margin-bottom:6px">🎯 3-PERSPECTIVE DELIVERY COACHING</div>';if(_vp.top_priority)html+='<div style="font-size:12px;color:var(--amber);padding:6px 10px;background:rgba(245,158,11,.08);border-radius:6px;margin-bottom:8px;border-left:2px solid var(--amber)">🎯 <strong>Top priority:</strong> '+_vp.top_priority+'</div>';if(_vp.overall_verdict)html+='<div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">'+_vp.overall_verdict+'</div>';html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">';[{k:"mckinsey",label:"📊 McKinsey",c:"var(--teal)"},{k:"harvard",label:"🎓 Harvard",c:"var(--green)"},{k:"execcoach",label:"💼 Exec Coach",c:"var(--purple)"}].forEach(function(p){html+='<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);padding:10px"><div style="font-size:10px;font-weight:700;color:'+p.c+';margin-bottom:4px">'+p.label+'</div><div style="font-size:11px;color:var(--text2);line-height:1.5">'+((_vp[p.k]&&_vp[p.k].tip)||"")+'</div></div>';});html+='</div>';if(_vp.coached_version)html+='<div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:10px;border-left:2px solid var(--teal)"><div style="font-size:10px;color:var(--teal);font-weight:600;margin-bottom:4px">✨ COACHED OPENING</div><div style="font-size:12px;color:var(--text);line-height:1.6;font-style:italic">"'+_vp.coached_version+'"</div></div>';html+='</div>';return html;})()}
+${(function(){var _vp=(S.attempts[S.currentQ]||[])[viewIdx]&&(S.attempts[S.currentQ]||[])[viewIdx].voicePersonas;if(!_vp)return "";
+    var html='<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:14px;margin-top:10px">';
+    html+='<div style="font-size:10px;font-weight:600;text-transform:uppercase;color:var(--purple);margin-bottom:6px">🎯 3-PERSPECTIVE DELIVERY COACHING</div>';
+    if(_vp.top_priority)html+='<div style="font-size:12px;color:var(--amber);padding:6px 10px;background:rgba(245,158,11,.08);border-radius:6px;margin-bottom:8px;border-left:2px solid var(--amber)">🎯 <strong>Top priority:</strong> '+_vp.top_priority+'</div>';
+    if(_vp.overall_verdict)html+='<div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">'+_vp.overall_verdict+'</div>';
+    html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">';
+    [{k:"mckinsey",label:"🏢 Consulting Firm",c:"var(--teal)"},{k:"harvard",label:"🔬 Research Org",c:"var(--green)"},{k:"execcoach",label:"💼 Exec Coach",c:"var(--purple)"}].forEach(function(p){
+      var pd=_vp[p.k]||{};
+      html+='<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);padding:10px">';
+      html+='<div style="font-size:10px;font-weight:700;color:'+p.c+';margin-bottom:6px;text-transform:uppercase">'+p.label+'</div>';
+      if(pd.headline)html+='<div style="font-size:12px;font-weight:600;color:var(--text1);margin-bottom:6px;line-height:1.4">'+pd.headline+'</div>';
+      if(pd.feedback)html+='<div style="font-size:11px;color:var(--text2);line-height:1.6;margin-bottom:8px">'+pd.feedback+'</div>';
+      if(pd.rewrite)html+='<div style="background:var(--bg2);border-left:2px solid '+p.c+';padding:8px;border-radius:0 4px 4px 0;font-size:11px;color:var(--text2);line-height:1.5;margin-bottom:6px"><div style="font-size:9px;font-weight:600;color:'+p.c+';margin-bottom:3px;text-transform:uppercase">Coached opening</div>'+pd.rewrite+'</div>';
+      if(pd.framework)html+='<div style="font-size:9px;color:var(--text3);padding-top:4px;border-top:0.5px solid var(--border)">ℹ️ '+pd.framework+'</div>';
+      html+='</div>';
+    });
+    html+='</div>';
+    html+='</div>';
+    return html;})()}
 
 <!-- Enhancement 3: Persona breakdown (show if available) -->
 ${fb?.personaVersions?.length?`
@@ -1627,6 +1766,7 @@ ${fb?.personaVersions?.length?`
   </div>
   <div class="compare-panel ideal">
     <div class="compare-header"><span class="compare-label">Coached version ✨</span>${fb.model_loading?`<button class="cmp-listen" disabled style="opacity:.4;cursor:not-allowed" title="Loading…">🔊 Listen</button>`:`<button class="cmp-listen ${S.playingSection===psIdeal?"playing":""}" onclick="${S.playingSection===psIdeal?"stopAll()":"playIdeal("+S.currentQ+","+viewIdx+")"}">${S.playingSection===psIdeal?"⏹":"🔊"} Listen</button>`}</div>
+    ${fb.delivery_guide&&!fb.model_loading?`<div style="font-size:10px;color:var(--amber);padding:5px 8px;background:rgba(245,158,11,.06);border-radius:6px;margin-bottom:6px;border-left:2px solid var(--amber)">🎯 ${fb.delivery_guide}</div>`:""}
     <div class="compare-text" id="ma-${S.currentQ}_${viewIdx}">${fb.model_loading?`<span style="color:var(--text3);font-style:italic">Coaching your answer…</span>`:""}</div>
   </div>
 </div>
@@ -1742,7 +1882,7 @@ function renderHome(){
   <div class="path-card interview" onclick="document.getElementById('stepbar').style.display='flex';set({screen:'setup'});setstep(1)">
     <div class="path-icon">🎯</div>
     <div class="path-title">Training Hub</div>
-    <div class="path-desc">Upload your resume and job description. Get tailored questions, 4-dimension scoring, and 3-perspective coached answers.</div>
+    <div class="path-desc">Upload any document — resume, study notes, client brief. Get tailored questions, 4-dimension scoring, and 3-perspective coached answers for interviews, certifications, presentations and more.</div>
     <div class="path-chips">
       <span class="path-chip">Any document type</span>
       <span class="path-chip">Auto-detected context</span>
@@ -1753,15 +1893,15 @@ function renderHome(){
   </div>
   <div class="path-card" onclick="set({screen:'voicecoach',vcTopic:'',vcPreset:'',vcTranscript:'',vcMetrics:null,vcPersonas:null,vcRecording:false,vcLoading:false})">
     <div class="path-icon">🎙️</div>
-    <div class="path-title">Voice coach</div>
-    <div class="path-desc">No resume needed. Pick a scenario, speak for up to 3 minutes, and get instant delivery coaching — WPM, fillers, clarity, and 3-perspective tips.</div>
+    <div class="path-title">Communication Coach</div>
+    <div class="path-desc">No documents needed. Pick a scenario, speak for up to 3 minutes, and get instant delivery coaching — WPM, fillers, clarity, and 3-perspective tips.</div>
     <div class="path-chips">
       <span class="path-chip">No upload needed</span>
       <span class="path-chip">Up to 3 minutes</span>
       <span class="path-chip">Presentations · Pitches · Negotiation</span>
       <span class="path-chip">Instant delivery coaching</span>
     </div>
-    <div style="margin-top:16px"><span class="btn" style="font-size:12px;padding:8px 16px;background:var(--purple)">Start voice coach →</span></div>
+    <div style="margin-top:16px"><span class="btn" style="font-size:12px;padding:8px 16px;background:var(--purple)">Start Communication Coach →</span></div>
   </div>
 </div>`;
 }
@@ -1813,7 +1953,11 @@ ${(S.vcPreset||S.vcTopic.trim())&&!S.vcMetrics?`
   <div style="font-size:13px;color:var(--text2);text-align:center">
     ${S.vcPreset||S.vcTopic?`<strong style="color:var(--text)">${S.vcTopic||(VC_PRESETS.find(p=>p.id===S.vcPreset)?.prompt||'')}</strong>`:'Select a scenario above to begin'}
   </div>
-  <button class="vc-mic ${S.vcRecording?'rec':'idle'}" onclick="toggleVoiceCoach()">${S.vcRecording?'⏹':'🎙️'}</button>
+  <div style="display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap">
+    <button class="vc-mic ${S.vcRecording?'rec':'idle'}" onclick="toggleVoiceCoach()">${S.vcRecording?'⏹':'🎙️'}</button>
+    ${S.vcTranscript&&!S.vcRecording&&vcAudioBlob?`<button class="btn-outline" onclick="playVcRecording()">${S.playingRecording==="vc"?"⏹ Stop":"🔊 Replay"}</button>`:''}
+    ${S.vcTranscript&&!S.vcRecording?`<button class="btn" onclick="analyseVoiceCoach()" ${S.vcLoading?'disabled':''}>${S.vcLoading?'<span class="spin" style="width:14px;height:14px;border-width:1.5px;display:inline-block;vertical-align:middle;margin-right:6px"></span>Analysing…':'🔬 Analyse'}</button>`:''}
+  </div>
   ${S.vcRecording?`<div class="vc-timer ${timerCls}" id="vc-timer">${timerDisplay}</div><div style="font-size:11px;color:var(--text3)">${rem}s remaining</div>`:
   `<div style="font-size:13px;color:var(--text2)">${S.vcTranscript?'Recording stopped — ready to analyse':'Tap mic to start'}</div>`}
   <div class="vc-meter"><div class="vc-meter-fill" id="vc-meter-fill"></div></div>
@@ -1821,10 +1965,6 @@ ${(S.vcPreset||S.vcTopic.trim())&&!S.vcMetrics?`
   <div style="font-size:10px;color:var(--text3)">Best in Chrome on desktop · Max 3 minutes</div>
   ${S.vcTranscript&&!S.vcRecording?`
   <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
-    <button class="btn" onclick="analyseVoiceCoach()" ${S.vcLoading?'disabled':''}>
-      ${S.vcLoading?'<span class="spin" style="width:14px;height:14px;border-width:1.5px;display:inline-block;vertical-align:middle;margin-right:6px"></span>Analysing…':'🔬 Analyse my delivery'}
-    </button>
-    ${vcAudioBlob?`<button class="btn-outline" onclick="playVcRecording()">🔊 Replay</button>`:''}
     <button class="btn-outline" onclick="set({vcTranscript:'',vcMetrics:null,vcPersonas:null})">↺ Re-record</button>
   </div>`:''}
 </div>
@@ -1839,9 +1979,9 @@ ${S.vcScript?`
         <button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="set({vcScript:null})">✕</button>
       </div>
     </div>
-    ${S.vcScript.tip?'<div style="font-size:11px;color:var(--teal);padding:6px 10px;background:rgba(6,182,212,.06);border-radius:6px;margin-bottom:10px;border-left:2px solid var(--teal)">💡 '+S.vcScript.tip+'</div>':""  }
+    ${S.vcScript.tip?'<div style="font-size:11px;color:var(--teal);padding:6px 10px;background:rgba(6,182,212,.06);border-radius:6px;margin-bottom:6px;border-left:2px solid var(--teal)">💡 '+S.vcScript.tip+'</div>':""  }
+    ${S.vcScript.delivery_guide?'<div style="font-size:11px;color:var(--amber);padding:6px 10px;background:rgba(245,158,11,.06);border-radius:6px;margin-bottom:10px;border-left:2px solid var(--amber)">🎯 '+S.vcScript.delivery_guide+'</div>':""}
     <div id="vc-script-text" style="background:var(--bg3);border-radius:var(--r);padding:14px;border:0.5px solid var(--border)"></div>
-    <div style="font-size:11px;color:var(--text3);margin-top:6px"><span style="color:var(--amber)">■</span> PAUSE &nbsp; <span style="color:var(--teal)">■</span> BREATHE &nbsp; <span style="color:var(--purple)">■</span> SLOW &nbsp; <span style="color:var(--accent)">■</span> STRESS</div>
   </div>`:""}
 </div>`:""}
 
@@ -1855,7 +1995,7 @@ ${S.error?`<div class="err">${S.error}</div>`:''}`:`
       <div style="font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:${m.overallVoice>=75?'var(--green)':m.overallVoice>=50?'var(--amber)':'var(--red)'}">${m.overallVoice}%</div>
     </div>
     <div style="display:flex;gap:8px">
-      ${vcAudioBlob?`<button class="ap-btn ap-btn-play" onclick="playVcRecording()">🔊 Replay my voice</button>`:''}
+      ${vcAudioBlob?`<button class="ap-btn ap-btn-play" onclick="playVcRecording()">${S.playingRecording==="vc"?"⏹ Stop":"🔊 Replay my voice"}</button>`:''}
       <button class="btn-outline" onclick="set({vcTranscript:'',vcMetrics:null,vcPersonas:null,vcDuration:0})">↺ Practice again</button>
     </div>
   </div>
@@ -1915,7 +2055,15 @@ function render(){
     const _qIdx=S.currentQ;
     const _vIdx=S.viewingAttempt[_qIdx]??((S.attempts[_qIdx]||[]).length-1);
     const _maEl=document.getElementById('ma-'+_qIdx+'_'+_vIdx);
-    if(_maEl){const _fb=(S.attempts[_qIdx]||[])[_vIdx]?.feedback;if(_fb?.model_answer)_maEl.innerHTML=_fb.model_answer;}
+    if(_maEl){const _fb=(S.attempts[_qIdx]||[])[_vIdx]?.feedback;if(_fb?.model_answer){
+      // Clean flowing paragraphs — split into readable chunks
+      var _paras=_fb.model_answer.split(/\n\n+/).filter(function(p){return p.trim();});
+      if(_paras.length<=1){
+        var _sents=_fb.model_answer.match(/[^.!?]+[.!?]+/g)||[_fb.model_answer];
+        _paras=[];for(var _i=0;_i<_sents.length;_i+=3){_paras.push(_sents.slice(_i,_i+3).join(' ').trim());}
+      }
+      _maEl.innerHTML=_paras.map(function(p){return '<div style="margin-bottom:12px;line-height:1.8">'+p.trim()+'</div>';}).join('');
+    }}
   }
   else if(S.screen==="results"){root.innerHTML=renderResults();showNavToggle('interview');}
   else if(S.screen==="voicecoach"){root.innerHTML=renderVoiceCoach();showNavToggle('voice');setTimeout(renderScriptHTML,10);}
